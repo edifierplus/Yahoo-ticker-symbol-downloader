@@ -3,6 +3,7 @@ from ..symbols.Generic import Generic
 
 from ..compat import text
 
+
 class GenericDownloader(SymbolDownloader):
     def __init__(self):
         SymbolDownloader.__init__(self, "generic")
@@ -26,4 +27,3 @@ class GenericDownloader(SymbolDownloader):
 
     def getRowHeader(self):
         return SymbolDownloader.getRowHeader(self) + ["exchangeDisplay", "Type", "TypeDisplay"]
-

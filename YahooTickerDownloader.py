@@ -1,19 +1,16 @@
 #!/usr/bin/env python
 
-import pickle
-from time import sleep
 import argparse
 import io
-
-from ytd import SimpleSymbolDownloader
-from ytd.downloader.GenericDownloader import GenericDownloader
-from ytd.compat import text
-from ytd.compat import csv
-from ytd.compat import robotparser
+import pickle
+from time import sleep
 
 import tablib
+from tqdm import tqdm
 
-import sys
+from ytd import SimpleSymbolDownloader
+from ytd.compat import csv, robotparser, text
+from ytd.downloader.GenericDownloader import GenericDownloader
 
 user_agent = SimpleSymbolDownloader.user_agent
 
@@ -33,32 +30,28 @@ def saveDownloader(downloader, tickerType):
 
 
 def downloadEverything(downloader, tickerType, insecure, sleeptime, pandantic):
-
     loop = 0
+    pbar = tqdm()
     while not downloader.isDone():
+        symbols = downloader.nextRequest(pbar, insecure, pandantic)
 
-        symbols = downloader.nextRequest(insecure, pandantic)
-        print("Got " + str(len(symbols)) + " downloaded " + downloader.type + " symbols:")
-        if(len(symbols) > 2):
-            try:
-                print (" " + text(symbols[0]))
-                print (" " + text(symbols[1]))
-                print ("  ect...")
-            except:
-                print (" Could not display some ticker symbols due to char encoding")
-        downloader.printProgress()
+        if len(symbols) > 0:
+            unique, pbar.n, pbar.total, query = downloader.getProgress()
+            pbar.write(f"Query: {query} | Symbols: " + " ".join(symbol.ticker for symbol in symbols))
+            pbar.set_description(f"[{unique} unique symbols]")
+            pbar.refresh()
 
         # Save download state occasionally.
         # We do this in case this long running is suddenly interrupted.
         loop = loop + 1
         if loop % 200 == 0:
-            print ("Saving downloader to disk...")
+            pbar.write("Saving downloader to disk...")
             saveDownloader(downloader, tickerType)
-            print ("Downloader successfully saved.")
-            print ("")
+            pbar.write("Downloader successfully saved.")
 
         if not downloader.isDone():
             sleep(sleeptime)  # So we don't overload the server.
+
 
 def main():
     downloader = None
@@ -86,7 +79,7 @@ def main():
     try:
         downloader = loadDownloader(tickerType)
         print("Downloader found on disk, resuming")
-    except:
+    except Exception:
         print("No old downloader found on disk")
         print("Starting a new session")
         if tickerType not in options:
@@ -100,19 +93,20 @@ def main():
     rp.read()
     try:
         if not args.export:
-            
-            if(not rp.can_fetch(user_agent, protocol + '://finance.yahoo.com/_finance_doubledown/api/resource/searchassist')):
+
+            if not rp.can_fetch(user_agent,
+                                protocol + '://finance.yahoo.com/_finance_doubledown/api/resource/searchassist'):
                 print('Execution of script halted due to robots.txt')
                 return 1
-            
+
             if not downloader.isDone():
                 print("Downloading " + downloader.type)
                 print("")
                 downloadEverything(downloader, tickerType, args.insecure, args.sleep, args.pandantic)
-                print ("Saving downloader to disk...")
+                print("Saving downloader to disk...")
                 saveDownloader(downloader, tickerType)
-                print ("Downloader successfully saved.")
-                print ("")
+                print("Downloader successfully saved.")
+                print("")
             else:
                 print("The downloader has already finished downloading everything")
                 print("")
@@ -124,19 +118,19 @@ def main():
         print("Try removing {type}.pickle file if this error persists")
         print("Issues can be reported on https://github.com/Benny-/Yahoo-ticker-symbol-downloader/issues")
         print("")
-        raise
-    except KeyboardInterrupt as ex:
+        raise ex
+    except KeyboardInterrupt:
         print("Suspending downloader to disk as .pickle file")
         saveDownloader(downloader, tickerType)
 
     if downloader.isDone() or args.export:
-        print("Exporting "+downloader.type+" symbols")
+        print("Exporting " + downloader.type + " symbols")
 
         data = tablib.Dataset()
         data.headers = downloader.getRowHeader()
 
         for symbol in downloader.getCollectedSymbols():
-            if(args.Exchange == None):
+            if args.Exchange is None:
                 data.append(symbol.getRow())
             elif (symbol.exchange == args.Exchange):
                 data.append(symbol.getRow())
@@ -145,26 +139,27 @@ def main():
             f.write(text.join(u',', data.headers) + '\n')
             writer = csv.writer(f)
             for i in range(0, len(data)):
-                row = [text(y) if not y is None else u"" for y in data[i]]
+                row = [text(y) if y is not None else u"" for y in data[i]]
                 writer.writerow(row)
 
         try:
             with open(downloader.type + '.xlsx', 'wb') as f:
                 f.write(data.xlsx)
-        except:
+        except Exception:
             print("Could not export .xlsx due to a internal error")
 
         try:
             with open(downloader.type + '.json', 'wb') as f:
                 f.write(data.json.encode('UTF-8'))
-        except:
+        except Exception:
             print("Could not export .json due to a internal error")
 
         try:
             with open(downloader.type + '.yaml', 'wb') as f:
                 f.write(data.yaml.encode('UTF-8'))
-        except:
+        except Exception:
             print("Could not export .yaml due to a internal error")
+
 
 if __name__ == "__main__":
     main()
