@@ -102,6 +102,8 @@ class SymbolDownloader:
                     pbar.write("Retry attempt: " + str(retryCount) + " of " + str(maxRetries) + "."
                                " Sleep period: " + str(sleepAmt) + " seconds.")
                     sleep(sleepAmt)
+                    # Recreate the session after sleeping.
+                    self.rsession = requests.Session()
                 else:
                     raise ex
 
