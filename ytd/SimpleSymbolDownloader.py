@@ -13,30 +13,29 @@ first_search_characters = 'abcdefghijklmnopqrstuvwxyz'
 class SymbolDownloader:
     """Abstract class"""
 
-    def __init__(self, type):
+    def __init__(self, type, starter=None):
         # All downloaded symbols are stored in a dict before exporting
         # This is to ensure no duplicate data
         self.symbols = dict()
         self.rsession = requests.Session()
         self.type = type
-
         self.queries = list()
         self.queries_set = set()
-        self._add_queries()
         self.idx = -1
         self.done = False
+        self._start_queries(first_search_characters if starter is None else starter)
+
+    def _start_queries(self, starter):
+        for word in starter:
+            if word not in self.queries_set:
+                self.queries.append(word)
+                self.queries_set.add(word)
 
     def _add_queries(self, prefix=''):
-        # This method will add (prefix+)a...z to self.queries
-        # This API requires the first character of the search to be a letter.
-        # The second character can be a letter, number, dot, or equals sign.
-        if len(prefix) == 0:
-            search_characters = first_search_characters
-        else:
-            search_characters = general_search_characters
-
-        for i in range(len(search_characters)):
-            element = str(prefix) + str(search_characters[i])
+        # This method will add prefix plus one of general_search_characters to self.queries
+        # The general_search_characters can be a letter, number, dot, or equals sign.
+        for i in range(len(general_search_characters)):
+            element = str(prefix) + str(general_search_characters[i])
             if element not in self.queries_set:  # Avoid having duplicates in list
                 self.queries.append(element)
                 self.queries_set.add(element)
@@ -86,9 +85,9 @@ class SymbolDownloader:
         retryCount = 0
         json = None
         # Eponential back-off algorithm
-        # to attempt 5 more times sleeping 5, 25, 125, 625, 3125 seconds
-        # respectively.
+        # to attempt 5 more times sleeping x, x^2, x^3, x^4, x^5 seconds respectively.
         maxRetries = 5
+        firstSleep = 5  # seconds
         while not success:
             try:
                 json = self._fetch(insecure)
@@ -98,12 +97,11 @@ class SymbolDownloader:
                     requests.exceptions.ReadTimeout,
                     requests.exceptions.ConnectionError) as ex:
                 if retryCount < maxRetries:
-                    attempt = retryCount + 1
-                    sleepAmt = int(math.pow(5, attempt))
-                    pbar.write("Retry attempt: " + str(attempt) + " of " + str(maxRetries) + "."
+                    retryCount += 1
+                    sleepAmt = int(math.pow(firstSleep, retryCount))
+                    pbar.write("Retry attempt: " + str(retryCount) + " of " + str(maxRetries) + "."
                                " Sleep period: " + str(sleepAmt) + " seconds.")
                     sleep(sleepAmt)
-                    retryCount = attempt
                 else:
                     raise ex
 
@@ -113,7 +111,7 @@ class SymbolDownloader:
             self.symbols[symbol.ticker] = symbol
 
         # There is no pagination with this API.
-        # If we receive 10 results, add another layer of queries to narrow the search further
+        # If we receive 10 results, add another layer of queries by expending the query to narrow the search further.
         if(count == 10):
             self._add_queries(self.queries[self.idx])
         elif(count > 10):
@@ -142,4 +140,5 @@ class SymbolDownloader:
         return ["Ticker", "Name", "Exchange"]
 
     def getProgress(self):
-        return len(self.symbols), self.idx, len(self.queries), self.queries[self.idx]
+        """Returns (# unique symbols, # processed queries, # total queries, current query)"""
+        return (len(self.symbols), self.idx, len(self.queries), self.queries[self.idx])
